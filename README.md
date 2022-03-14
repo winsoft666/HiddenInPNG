@@ -1,5 +1,8 @@
 # HiddenInPNG
-Hidden data in png file.
+Hidden anything into PNG file and NOT affect original image.
 
-# akali_hpp
-Download [akali_hpp](https://github.com/winsoft666/akali_hpp) to HiddenInPNG's sibling directory. 
+# Dependency
+Download [jhc](https://github.com/winsoft666/jhc) to HiddenInPNG's sibling directory. 
+
+# Usage
+See [demo/demo.cpp](./demo/demo.cpp)

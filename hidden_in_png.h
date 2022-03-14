@@ -1,5 +1,7 @@
 /*******************************************************************************
-*    Copyright (C) <2022>  <winsoft666@outlook.com>.
+*    Hidden anything into PNG file and NOT affect original image.
+*    -------------------------------------------------------------------------
+*    Copyright (C) 2022 JiangXueqiao <winsoft666@outlook.com>.
 *
 *    This program is free software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as published by

@@ -1,5 +1,7 @@
 /*******************************************************************************
-*    Copyright (C) <2022>  <winsoft666@outlook.com>.
+*    Hidden anything into PNG file and NOT affect original image.
+*    -------------------------------------------------------------------------
+*    Copyright (C) 2022 JiangXueqiao <winsoft666@outlook.com>.
 *
 *    This program is free software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as published by
@@ -19,9 +21,9 @@
 #include <cassert>
 #include "lodepng/lodepng.h"
 #include "lodepng/lodepng_util.h"
-#include "akali_hpp/byteorder.hpp"
-
-#define KEY_FIXED_LEN 32
+#include "jhc/byteorder.hpp"
+#include "jhc/md5.hpp"
+#include "jhc/string_helper.hpp"
 
 HiddenInPNG::HiddenInPNG(const std::string& pngFilePath) :
     pngFilePath_(pngFilePath) {
@@ -35,9 +37,10 @@ std::string HiddenInPNG::pngFilePath() const {
 }
 
 bool HiddenInPNG::hasHiddenData(const std::string& key) {
-    assert(key.length() > 0 && key.length() <= KEY_FIXED_LEN);
-    if (!isLoaded_ || pngData_.empty() || !(key.length() > 0 && key.length() <= KEY_FIXED_LEN))
+    assert(key.length() > 0 && !key.empty());
+    if (!isLoaded_ || pngData_.empty() || key.empty())
         return false;
+
     if (!isLoaded_ || pngData_.empty())
         return false;
 
@@ -50,7 +53,7 @@ bool HiddenInPNG::hasHiddenData(const std::string& key) {
         for (size_t i = 0; i < names[2].size(); i++) {
             if (names[2][i] == "tEXt") {
                 const unsigned char* pChunkStart = &chunks[2][i][0];
-                const unsigned int dataLen = akl::ByteOrder::GetBE32(pChunkStart);
+                const unsigned int dataLen = jhc::ByteOrder::GetBE32(pChunkStart);
                 const unsigned char* pChunkDataStart = pChunkStart + 8;
 
                 if (dataLen < fixedKey.length())
@@ -72,8 +75,8 @@ bool HiddenInPNG::hasHiddenData(const std::string& key) {
 }
 
 bool HiddenInPNG::getHiddenData(const std::string& key, std::vector<unsigned char>& data) {
-    assert(key.length() > 0 && key.length() <= KEY_FIXED_LEN);
-    if (!isLoaded_ || pngData_.empty() || !(key.length() > 0 && key.length() <= KEY_FIXED_LEN))
+    assert(key.length() > 0 && !key.empty());
+    if (!isLoaded_ || pngData_.empty() || key.empty())
         return false;
 
     const std::string fixedKey = toFixedKey(key);
@@ -85,7 +88,7 @@ bool HiddenInPNG::getHiddenData(const std::string& key, std::vector<unsigned cha
         for (size_t i = 0; i < names[2].size(); i++) {
             if (names[2][i] == "tEXt") {
                 const unsigned char* pChunkStart = &chunks[2][i][0];
-                const unsigned int dataLen = akl::ByteOrder::GetBE32(pChunkStart);
+                const unsigned int dataLen = jhc::ByteOrder::GetBE32(pChunkStart);
                 const unsigned char* pChunkDataStart = pChunkStart + 8;
 
                 if (dataLen < fixedKey.length())
@@ -98,7 +101,8 @@ bool HiddenInPNG::getHiddenData(const std::string& key, std::vector<unsigned cha
                     continue;
 
                 data.resize(dataLen - fixedKey.length());
-                memcpy(&data[0], pChunkDataStart + fixedKey.length(), dataLen - fixedKey.length());
+                if (data.size() > 0)
+                    memcpy(&data[0], pChunkDataStart + fixedKey.length(), dataLen - fixedKey.length());
 
                 result = true;
                 break;
@@ -110,93 +114,123 @@ bool HiddenInPNG::getHiddenData(const std::string& key, std::vector<unsigned cha
 }
 
 bool HiddenInPNG::setHiddenData(const std::string& key, const unsigned char* data, size_t dataSize) {
-    assert(key.length() > 0 && key.length() <= KEY_FIXED_LEN);
-    if (!isLoaded_ || pngData_.empty() || !(key.length() > 0 && key.length() <= KEY_FIXED_LEN))
+    assert(key.length() > 0 && !key.empty());
+    if (!isLoaded_ || pngData_.empty() || key.empty())
         return false;
     if (!isLoaded_ || pngData_.empty())
         return false;
 
     const std::string fixedKey = toFixedKey(key);
 
-    if (hasHiddenData(key)) {
-        // TODO
+    if (hasHiddenData(fixedKey)) {
+        return false;
     }
-    else {
-        std::vector<std::vector<unsigned char> > chunks[3];
-        const size_t size = fixedKey.length() + 1 + dataSize;
 
-        std::vector<unsigned char> writtenData;
-        writtenData.resize(size);
-        memcpy(&writtenData[0], fixedKey.c_str(), fixedKey.size());
-        memcpy((&writtenData[0] + fixedKey.size()), data, dataSize);
+    std::vector<std::vector<unsigned char> > chunks[3];
+    const size_t size = fixedKey.length() + 1 + dataSize;
 
-        unsigned char* newChunk = nullptr;
-        size_t newChunkSize = 0;
-        unsigned int ret = lodepng_chunk_create(&newChunk, &newChunkSize, size, "tEXt", &writtenData[0]);
-        if (ret != 0)
-            return false;
+    std::vector<unsigned char> writtenData;
+    writtenData.resize(size);
+    memcpy(&writtenData[0], fixedKey.c_str(), fixedKey.size());
+    memcpy((&writtenData[0] + fixedKey.size()), data, dataSize);
 
-        std::vector<unsigned char> newChunkVector;
-        newChunkVector.resize(newChunkSize);
-        memcpy(&newChunkVector[0], newChunk, newChunkSize);
+    unsigned char* newChunk = nullptr;
+    size_t newChunkSize = 0;
+    unsigned int ret = lodepng_chunk_create(&newChunk, &newChunkSize, size, "tEXt", &writtenData[0]);
+    if (ret != 0)
+        return false;
 
-        chunks[2].push_back(newChunkVector);
+    std::vector<unsigned char> newChunkVector;
+    newChunkVector.resize(newChunkSize);
+    memcpy(&newChunkVector[0], newChunk, newChunkSize);
 
-        ret = lodepng::insertChunks(pngData_, chunks);
-        if (ret != 0)
-            return false;
+    chunks[2].push_back(newChunkVector);
 
-        return true;
-    }
+    ret = lodepng::insertChunks(pngData_, chunks);
+    if (ret != 0)
+        return false;
+
+    return true;
 }
 
 bool HiddenInPNG::setHiddenData(const std::string& key, const std::vector<unsigned char>& data) {
+    if (data.empty())
+        return false;
     return setHiddenData(key, &data[0], data.size());
 }
 
 bool HiddenInPNG::removeHiddenData(const std::string& key) {
-    assert(key.length() > 0 && key.length() <= KEY_FIXED_LEN);
-    if (!isLoaded_ || pngData_.empty() || !(key.length() > 0 && key.length() <= KEY_FIXED_LEN))
+    assert(key.length() > 0 && !key.empty());
+    if (!isLoaded_ || pngData_.empty() || key.empty())
         return false;
+
     if (!isLoaded_ || pngData_.empty())
+        return false;
+
+    if (pngData_.size() <= 8)
         return false;
 
     const std::string fixedKey = toFixedKey(key);
 
-    bool result = false;
-    std::vector<std::string> names[3];
-    std::vector<std::vector<unsigned char> > chunks[3];
-    if (0 == lodepng::getChunks(names, chunks, pngData_)) {
-        for (size_t i = 0; i < names[2].size(); i++) {
-            if (names[2][i] == "tEXt") {
-                const unsigned char* pChunkStart = &chunks[2][i][0];
-                const unsigned int dataLen = akl::ByteOrder::GetBE32(pChunkStart);
-                const unsigned char* pChunkDataStart = pChunkStart + 8;
+    bool pngUpdated = false;
+    const unsigned char *chunk, *next, *end;
+    end = &pngData_.back() + 1;
+    chunk = &pngData_.front() + 8;
 
-                if (dataLen < fixedKey.length())
-                    continue;
+    std::vector<unsigned char> newPngData;
+    for (int i = 0; i < 8; i++) {
+        newPngData.push_back(pngData_[i]);
+    }
 
+    while (chunk && chunk < end) {
+        bool bDrop = false;
+        char type[5];
+        lodepng_chunk_type(type, chunk);
+        std::string name(type);
+        if (name.size() != 4) {
+            pngUpdated = false;
+            break;
+        }
+
+        next = lodepng_chunk_next_const(chunk, end);
+
+        if (name == "tEXt") {
+            const unsigned char* pChunkStart = chunk;
+            const unsigned int dataLen = jhc::ByteOrder::GetBE32(pChunkStart);
+            const unsigned char* pChunkDataStart = pChunkStart + 8;
+
+            if (dataLen >= fixedKey.length()) {
                 std::string strFlag;
                 strFlag.assign((const char*)pChunkDataStart, fixedKey.length());
 
-                if (strFlag != fixedKey)
-                    continue;
-
-                // TODO
-
-                result = true;
-                break;
+                if (strFlag == fixedKey)
+                    bDrop = true;
             }
         }
+
+        if (!bDrop) {
+            for (const unsigned char* i = chunk; i < next; i++) {
+                newPngData.push_back(*i);
+            }
+        }
+        else {
+            pngUpdated = true;
+        }
+
+        chunk = next;
     }
 
-    return result;
+    if (pngUpdated) {
+        pngData_.clear();
+        pngData_ = newPngData;
+    }
+
+    return true;
 }
 
 std::string HiddenInPNG::toFixedKey(const std::string& key) {
-    std::string str = key;
-    str.append(KEY_FIXED_LEN - key.length(), 'j');
-    return str;
+    std::string str = jhc::MD5::GetDataMD5((const unsigned char*)key.c_str(), key.size());
+    return jhc::StringHelper::ToLower(str);
 }
 
 bool HiddenInPNG::loadFile() {
