@@ -1,0 +1,3 @@
+[submodule "jhc"]
+	path = jhc
+	url = https://github.com/winsoft666/jhc.git
